@@ -407,7 +407,7 @@ const detectCSRF = (html, headers) => {
 
   // Check for forms without CSRF tokens
   const forms = html.match(/<form[^>]*>/gi) || [];
-  const csrfInputs = html.match(/type="hidden"[^>]*name="(csrf|_token|authenticity_token)/gi) || [];
+  const csrfInputs = html.match(/type="hidden"[^>]*name="(_?csrf|_token|authenticity_token|csrfmiddlewaretoken)/gi) || [];
 
   if (forms.length > 0 && csrfInputs.length === 0) {
     // No CSRF tokens found in forms
