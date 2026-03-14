@@ -1,0 +1,358 @@
+// prisma/schema.prisma - CyberLens AI Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(uuid())
+  name              String
+  email             String    @unique
+  password          String?
+  phone             String?
+  role              Role      @default(USER)
+  planId            String?
+  plan              Plan?     @relation(fields: [planId], references: [id])
+  emailVerified     Boolean   @default(false)
+  verifyToken       String?
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  refreshToken      String?
+  googleId          String?   @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  scans             Scan[]
+  reports           Report[]
+  monitors          Monitor[]
+  alerts            Alert[]
+  alertPreference   AlertPreference?
+  teamMemberships   TeamMember[]
+  ownedTeams        Team[]
+  auditLogs         AuditLog[]
+  apiKeys           ApiKey[]
+  domainVerifications DomainVerification[]
+  payments          Payment[]
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+model Plan {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  price         Float
+  scanLimit     Int       // -1 for unlimited
+  teamLimit     Int
+  hasAPI        Boolean   @default(false)
+  hasDarkWeb    Boolean   @default(false)
+  hasChatbot    Boolean   @default(false)
+  hasMonitor    Boolean   @default(false)
+  hasWhiteLabel Boolean   @default(false)
+  hasCompliance Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  users         User[]
+  payments      Payment[]
+
+  @@map("plans")
+}
+
+model Scan {
+  id            String    @id @default(uuid())
+  url           String
+  riskScore     Float     @default(0)
+  riskLevel     RiskLevel @default(LOW)
+  ssl           Json?     // SSL certificate details
+  sqliFound     Boolean   @default(false)
+  xssFound      Boolean   @default(false)
+  csrfFound     Boolean   @default(false)
+  headersJson   Json?     // HTTP security headers
+  owaspScore    Float     @default(0)
+  status        ScanStatus @default(PENDING)
+  reportId      String?
+  userId        String
+  teamId        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team          Team?     @relation(fields: [teamId], references: [id])
+  vulnerabilities Vulnerability[]
+  report        Report?
+  alerts        Alert[]
+
+  @@map("scans")
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ScanStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Vulnerability {
+  id            String    @id @default(uuid())
+  scanId        String
+  type          String
+  severity      Severity
+  title         String
+  description   String
+  solution      String
+  codeSnippet   String?
+  cvssScore     Float     @default(0)
+  owaspCategory String?
+  isFalsePositive Boolean @default(false)
+  isFixed       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  scan          Scan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@map("vulnerabilities")
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+model Report {
+  id            String    @id @default(uuid())
+  scanId        String    @unique
+  userId        String
+  type          ReportType @default(EXECUTIVE)
+  fileUrl       String?
+  shareToken    String    @unique @default(uuid())
+  downloadCount Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  scan          Scan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
+
+enum ReportType {
+  EXECUTIVE
+  DEVELOPER
+  COMPLIANCE
+}
+
+model Monitor {
+  id              String    @id @default(uuid())
+  userId          String
+  url             String
+  frequency       MonitorFrequency @default(DAILY)
+  active          Boolean   @default(true)
+  lastScan        DateTime?
+  nextScan        DateTime?
+  alertThreshold  Float     @default(70)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("monitors")
+}
+
+enum MonitorFrequency {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model Alert {
+  id        String    @id @default(uuid())
+  userId    String
+  scanId    String?
+  type      AlertType
+  message   String
+  severity  Severity
+  read      Boolean   @default(false)
+  sentVia   String[]
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scan      Scan?     @relation(fields: [scanId], references: [id], onDelete: SetNull)
+
+  @@map("alerts")
+}
+
+enum AlertType {
+  VULNERABILITY
+  RISK_INCREASE
+  SSL_EXPIRY
+  WEEKLY_DIGEST
+  ATTACK_DETECTED
+  SCAN_COMPLETE
+}
+
+model AlertPreference {
+  id            String  @id @default(uuid())
+  userId        String  @unique
+  email         Boolean @default(true)
+  whatsapp      Boolean @default(false)
+  sms           Boolean @default(false)
+  push          Boolean @default(false)
+  phone         String?
+  onVuln        Boolean @default(true)
+  onRiskIncrease Boolean @default(true)
+  onSSLExpiry   Boolean @default(true)
+  weeklyDigest  Boolean @default(true)
+  onAttack      Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("alert_preferences")
+}
+
+model Team {
+  id        String    @id @default(uuid())
+  name      String
+  ownerId   String
+  createdAt DateTime  @default(now())
+
+  owner     User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members   TeamMember[]
+  scans     Scan[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String    @id @default(uuid())
+  teamId    String
+  userId    String
+  role      TeamRole  @default(VIEWER)
+  createdAt DateTime  @default(now())
+
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+enum TeamRole {
+  ADMIN
+  ANALYST
+  DEVELOPER
+  VIEWER
+}
+
+model AuditLog {
+  id        String    @id @default(uuid())
+  userId    String?
+  action    String
+  details   Json?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model ApiKey {
+  id           String   @id @default(uuid())
+  userId       String
+  key          String   @unique
+  name         String
+  lastUsed     DateTime?
+  requestCount Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model DomainVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  domain    String
+  method    VerifyMethod
+  token     String
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, domain])
+  @@map("domain_verifications")
+}
+
+enum VerifyMethod {
+  DNS_TXT
+  FILE_UPLOAD
+  EMAIL
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  userId      String
+  planId      String
+  amount      Float
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+  invoiceUrl  String?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan        Plan          @relation(fields: [planId], references: [id])
+
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  STRIPE
+  JAZZCASH
+  EASYPAISA
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model DiscountCode {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  discount    Float     // percentage
+  usageLimit  Int
+  usedCount   Int       @default(0)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("discount_codes")
+}
