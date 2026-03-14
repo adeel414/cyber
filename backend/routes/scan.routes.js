@@ -293,6 +293,64 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 /**
+ * GET /api/scans/stats/overview
+ * Get scan statistics overview for the user
+ * NOTE: Must be defined BEFORE /:id to avoid being matched as an ID parameter
+ */
+router.get('/stats/overview', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [totalScans, criticalCount, highCount, avgRiskScore] = await Promise.all([
+      prisma.scan.count({ where: { userId } }),
+      prisma.vulnerability.count({
+        where: { scan: { userId }, severity: 'CRITICAL' },
+      }),
+      prisma.vulnerability.count({
+        where: { scan: { userId }, severity: 'HIGH' },
+      }),
+      prisma.scan.aggregate({
+        where: { userId, status: 'COMPLETED' },
+        _avg: { riskScore: true },
+      }),
+    ]);
+
+    // Recent scan history for trend (last 7 scans)
+    const recentScans = await prisma.scan.findMany({
+      where: { userId, status: 'COMPLETED' },
+      orderBy: { createdAt: 'desc' },
+      take: 7,
+      select: { riskScore: true, createdAt: true, url: true },
+    });
+
+    const currentMonthScans = await prisma.scan.count({
+      where: {
+        userId,
+        createdAt: {
+          gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalScans,
+        currentMonthScans,
+        criticalVulnerabilities: criticalCount,
+        highVulnerabilities: highCount,
+        avgRiskScore: Math.round(avgRiskScore._avg.riskScore || 0),
+        recentScans: recentScans.reverse(),
+        scanLimit: req.user.plan?.scanLimit ?? 5,
+      },
+    });
+  } catch (error) {
+    logger.error('Stats overview error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch statistics.' });
+  }
+});
+
+/**
  * GET /api/scans/:id
  * Get a specific scan with vulnerabilities
  */
@@ -351,63 +409,6 @@ router.delete('/:id', authenticate, async (req, res) => {
   } catch (error) {
     logger.error('Delete scan error:', error);
     res.status(500).json({ success: false, error: 'Failed to delete scan.' });
-  }
-});
-
-/**
- * GET /api/scans/stats/overview
- * Get scan statistics overview for the user
- */
-router.get('/stats/overview', authenticate, async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const [totalScans, criticalCount, highCount, avgRiskScore] = await Promise.all([
-      prisma.scan.count({ where: { userId } }),
-      prisma.vulnerability.count({
-        where: { scan: { userId }, severity: 'CRITICAL' },
-      }),
-      prisma.vulnerability.count({
-        where: { scan: { userId }, severity: 'HIGH' },
-      }),
-      prisma.scan.aggregate({
-        where: { userId, status: 'COMPLETED' },
-        _avg: { riskScore: true },
-      }),
-    ]);
-
-    // Recent scan history for trend (last 7 scans)
-    const recentScans = await prisma.scan.findMany({
-      where: { userId, status: 'COMPLETED' },
-      orderBy: { createdAt: 'desc' },
-      take: 7,
-      select: { riskScore: true, createdAt: true, url: true },
-    });
-
-    const currentMonthScans = await prisma.scan.count({
-      where: {
-        userId,
-        createdAt: {
-          gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-        },
-      },
-    });
-
-    res.json({
-      success: true,
-      data: {
-        totalScans,
-        currentMonthScans,
-        criticalVulnerabilities: criticalCount,
-        highVulnerabilities: highCount,
-        avgRiskScore: Math.round(avgRiskScore._avg.riskScore || 0),
-        recentScans: recentScans.reverse(),
-        scanLimit: req.user.plan?.scanLimit ?? 5,
-      },
-    });
-  } catch (error) {
-    logger.error('Stats overview error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch statistics.' });
   }
 });
 

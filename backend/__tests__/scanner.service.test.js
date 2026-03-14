@@ -128,6 +128,15 @@ describe('detectCSRF', () => {
     expect(result.found).toBe(false);
   });
 
+  it('does not flag CSRF when csrf_token is present', () => {
+    const html = `<form method="POST">
+      <input type="hidden" name="csrf_token" value="abc123">
+    </form>`;
+    const headers = {};
+    const result = detectCSRF(html, headers);
+    expect(result.found).toBe(false);
+  });
+
   it('does not flag CSRF when no forms exist', () => {
     const html = '<html><body><p>No forms here</p></body></html>';
     const headers = {};

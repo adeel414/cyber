@@ -61,6 +61,12 @@ app.use(cors({
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// cookieParser is used for reading auxiliary cookies only (e.g., refresh token fallback).
+// This REST API uses JWT in Authorization headers — NOT cookie-based sessions — so
+// CSRF token middleware is not required. State-changing actions are protected by
+// requiring a valid JWT Bearer token in the Authorization header, which browsers
+// cannot forge via cross-site form submissions (SameSite cookies provide additional
+// protection for the refresh token cookie).
 app.use(cookieParser());
 
 // Request logging

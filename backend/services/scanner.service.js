@@ -112,10 +112,16 @@ const runScan = async (url, scanId, io) => {
 };
 
 /**
- * Fetch URL with redirect tracking
+ * Fetch URL with redirect tracking.
+ * NOTE: rejectUnauthorized is intentionally disabled here because this is a
+ * security scanner that must be able to analyze sites with self-signed or
+ * expired certificates (to report SSL issues). The certificate status is
+ * separately analyzed by analyzeSSL(). This agent is ONLY used for scanning
+ * external user-submitted URLs — never for internal service communication.
  */
 const fetchUrl = async (url) => {
   const redirectChain = [];
+  // nosemgrep: nodejs_scan-audit-disabling_ssl_verification
   const agent = new https.Agent({ rejectUnauthorized: false });
 
   try {
@@ -371,14 +377,8 @@ const detectXSS = (html, headers) => {
   const csp = headers['content-security-policy'];
   const hasWeakCSP = !csp || csp.includes("'unsafe-inline'") || csp.includes('*');
 
-  // Check for reflected XSS indicators in HTML
-  const xssPatterns = [
-    /<script[^>]*>.*?<\/script>/gis,
-    /javascript:/gi,
-    /on\w+\s*=/gi,
-  ];
-
-  // Check for inline scripts without nonces/hashes (passive)
+  // Check for inline scripts without nonces/hashes (passive detection)
+  // Counts <script> tags that don't have a src attribute (inline scripts)
   const inlineScripts = (html.match(/<script(?![^>]*src)[^>]*>/gi) || []).length;
 
   if (hasWeakCSP && inlineScripts > 0) {
@@ -407,7 +407,7 @@ const detectCSRF = (html, headers) => {
 
   // Check for forms without CSRF tokens
   const forms = html.match(/<form[^>]*>/gi) || [];
-  const csrfInputs = html.match(/type="hidden"[^>]*name="(_?csrf|_token|authenticity_token|csrfmiddlewaretoken)/gi) || [];
+  const csrfInputs = html.match(/type="hidden"[^>]*name="(csrf|_csrf|csrf_token|_token|authenticity_token|csrfmiddlewaretoken)/gi) || [];
 
   if (forms.length > 0 && csrfInputs.length === 0) {
     // No CSRF tokens found in forms
